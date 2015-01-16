@@ -1088,19 +1088,21 @@ public abstract class JDBC3DatabaseMetaData extends org.sqlite.core.CoreDatabase
      * @see java.sql.DatabaseMetaData#getColumns(java.lang.String, java.lang.String,
      *      java.lang.String, java.lang.String)
      */
-    public ResultSet getColumns(String c, String s, String tblNamePattern, String colNamePattern) throws SQLException {
+    public ResultSet getColumns(String c, String schemaPattern, String tblNamePattern, String colNamePattern) throws SQLException {
         Statement stat = conn.createStatement();
         ResultSet rs;
         StringBuilder sql = new StringBuilder(700);
 
         checkOpen();
-
+        schemaPattern = (schemaPattern == null || "".equals(schemaPattern)) ? "%" : schemaPattern;
+        
         if (getColumnsTblName == null) {
-            getColumnsTblName = conn.prepareStatement("select tbl_name from sqlite_master where tbl_name like ?;");
+            getColumnsTblName = conn.prepareStatement("select tbl_name from (" + getSqliteMasterUnion() + ") where tbl_name like ? and database like ?;");
         }
 
         // determine exact table name
         getColumnsTblName.setString(1, tblNamePattern);
+        getColumnsTblName.setString(2, schemaPattern);
         rs = getColumnsTblName.executeQuery();
 
         if (rs.next()) {
@@ -1112,7 +1114,7 @@ public abstract class JDBC3DatabaseMetaData extends org.sqlite.core.CoreDatabase
             rs = stat.executeQuery("pragma table_info ('" + escape(tblNamePattern) + "');");
         }
 
-        sql.append("select null as TABLE_CAT, null as TABLE_SCHEM, '").append(escape(tblNamePattern)).append("' as TABLE_NAME, ")
+        sql.append("select null as TABLE_CAT, ").append(quote(schemaPattern)).append(" as TABLE_SCHEM, '").append(escape(tblNamePattern)).append("' as TABLE_NAME, ")
         .append("cn as COLUMN_NAME, ct as DATA_TYPE, tn as TYPE_NAME, 2000000000 as COLUMN_SIZE, ")
         .append("2000000000 as BUFFER_LENGTH, 10   as DECIMAL_DIGITS, 10   as NUM_PREC_RADIX, ")
         .append("colnullable as NULLABLE, null as REMARKS, colDefault as COLUMN_DEF, ")
@@ -1376,7 +1378,7 @@ public abstract class JDBC3DatabaseMetaData extends org.sqlite.core.CoreDatabase
                 }
             }
         }
-
+        
         boolean hasImportedKey = (count > 0);
         StringBuilder sql = new StringBuilder(512);
         sql.append("select ")
@@ -1614,14 +1616,17 @@ public abstract class JDBC3DatabaseMetaData extends org.sqlite.core.CoreDatabase
     public synchronized ResultSet getTables(String c, String s, String tblNamePattern, String types[]) throws SQLException {
         checkOpen();
 
+        s = (s == null || "".equals(s)) ? "%" : escape(s);
         tblNamePattern = (tblNamePattern == null || "".equals(tblNamePattern)) ? "%" : escape(tblNamePattern);
 
         StringBuilder sql = new StringBuilder();
-        sql.append("select null as TABLE_CAT, null as TABLE_SCHEM, name as TABLE_NAME,")
+        sql.append("select null as TABLE_CAT, database as TABLE_SCHEM, name as TABLE_NAME,")
            .append(" upper(type) as TABLE_TYPE, null as REMARKS, null as TYPE_CAT, null as TYPE_SCHEM,")
            .append(" null as TYPE_NAME, null as SELF_REFERENCING_COL_NAME, null as REF_GENERATION")
-           .append(" from (select name, type from sqlite_master union all select name, type from sqlite_temp_master)")
-           .append(" where TABLE_NAME like '").append(tblNamePattern).append("' and TABLE_TYPE in (");
+           .append(" from (select name, type, database from (").append(getSqliteMasterUnion())
+                .append(") union all select name, type, \"temp\" as database from sqlite_temp_master)")
+           .append(" where TABLE_NAME like '").append(tblNamePattern)
+           .append("' and TABLE_SCHEM like '").append(s).append("' and TABLE_TYPE in (");
 
         if (types == null || types.length == 0) {
             sql.append("'TABLE','VIEW'");
@@ -1637,6 +1642,20 @@ public abstract class JDBC3DatabaseMetaData extends org.sqlite.core.CoreDatabase
         sql.append(") order by TABLE_TYPE, TABLE_NAME;");
 
         return ((CoreStatement)conn.createStatement()).executeQuery(sql.toString(), true);
+    }
+    protected String getSqliteMasterUnion() throws SQLException {
+        StringBuilder union = new StringBuilder();
+        ResultSet rs = conn.createStatement().executeQuery("PRAGMA database_list");
+        union.append("select *, \"main\" as database from main.sqlite_master");
+        
+        while(rs.next()) {
+            String name = rs.getString(2);
+            if("temp".equals(name) || "main".equals(name)) {
+                continue;
+            }
+            union.append(" union all select *, ").append(quote(name)).append(" as database from ").append(name).append(".sqlite_master");
+        }
+        return union.toString();
     }
 
     /**
