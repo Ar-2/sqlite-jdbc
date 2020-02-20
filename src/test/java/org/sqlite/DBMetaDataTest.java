@@ -1112,12 +1112,12 @@ public class DBMetaDataTest
         stat.executeUpdate("create table person (id integer primary key)");
         stat.executeUpdate("create table address (pid integer, name, foreign key(pid) references person(id))");
 
-        ResultSet exportedKeys = meta.getExportedKeys("default", "global", "person");
+        ResultSet exportedKeys = meta.getExportedKeys("default", "main", "person");
         assertTrue(exportedKeys.next());
         assertEquals("default", exportedKeys.getString("PKTABLE_CAT"));
-        assertEquals("global", exportedKeys.getString("PKTABLE_SCHEM"));
+        assertEquals("main", exportedKeys.getString("PKTABLE_SCHEM"));
         assertEquals("default", exportedKeys.getString("FKTABLE_CAT"));
-        assertEquals("global", exportedKeys.getString("FKTABLE_SCHEM"));
+        assertEquals("main", exportedKeys.getString("FKTABLE_SCHEM"));
         assertNotNull(exportedKeys.getString("PK_NAME"));
         assertNotNull(exportedKeys.getString("FK_NAME"));
 
