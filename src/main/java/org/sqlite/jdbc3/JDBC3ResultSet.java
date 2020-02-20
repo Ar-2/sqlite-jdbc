@@ -611,7 +611,7 @@ public abstract class JDBC3ResultSet extends CoreResultSet {
         switch (getDatabase().column_type(stmt.pointer, markCol(col))) {
         case SQLITE_INTEGER:
             long val = getLong(col);
-            if (val > Integer.MAX_VALUE || val < Integer.MIN_VALUE) {
+            if (getColumnType(col) == Types.BIGINT || val > Integer.MAX_VALUE || val < Integer.MIN_VALUE) {
                 return new Long(val);
             }
             else {
